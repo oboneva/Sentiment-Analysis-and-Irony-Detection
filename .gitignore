@@ -127,3 +127,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+Datasets/
+dict.json
+dict_inverted.json
