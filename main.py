@@ -22,8 +22,8 @@ classifiers = [MultinomialNB(), SVC(), RandomForestClassifier(),
 
 
 def parse_file(filepath: str):
-    bike_sharing = pd.read_csv(filepath)
-    return bike_sharing
+    df = pd.read_csv(filepath)
+    return df
 
 
 def modify_classes(df):
