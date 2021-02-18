@@ -5,11 +5,11 @@ import pandas as pd
 
 es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
 
-use_these_keys = ['stars', 'comment']
+keys = ['stars', 'comment']
 
 
-def filterKeys(document):
-    return {key: document[key] for key in use_these_keys}
+def filter_keys(document):
+    return {key: document[key] for key in keys}
 
 
 def doc_generator(df):
@@ -19,16 +19,27 @@ def doc_generator(df):
             "_index": 'sarcastic_reviews_index',
             "_type": "_doc",
             "_id": f"{index}",
-            "_source": filterKeys(document),
+            "_source": filter_keys(document),
         }
 
 
-def main():
-    reviews_df = pd.read_csv("reviews.csv")
-    helpers.bulk(es, doc_generator(reviews_df))
+def serach_tokens(index, tokens):
+    res = es.search(index=index,
+                    body={"query": {"match": {"comment": tokens}}})
 
-    res = es.search(index="sarcastic_reviews_index",
-                    body={"query": {"match_all": {}}})
+    return res['hits']['hits']
+
+
+def search_phrase(index, phrase):
+    res = es.search(index=index, body={
+                    "query": {"match_phrase": {"comment": phrase}}})
+
+    return res['hits']['hits']
+
+
+def main():
+    # reviews_df = pd.read_csv("reviews.csv")
+    # helpers.bulk(es, doc_generator(reviews_df))
 
     # for hit in res['hits']['hits']:
     #     print(hit)
