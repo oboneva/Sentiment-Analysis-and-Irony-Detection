@@ -11,6 +11,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.metrics import confusion_matrix, classification_report
 import seaborn as sns
 import json
+import joblib
 
 from tweet_preprocess import clean
 from feature_engineering import feature_engineering
@@ -19,6 +20,8 @@ sns.set()
 
 classifiers = [MultinomialNB(), SVC(), RandomForestClassifier(),
                KNeighborsClassifier(n_neighbors=3), DecisionTreeClassifier()]
+classifiers_names = ["naive_bayes", "svm", "random_forest",
+                     "knn3", "decision_tree"]
 
 
 def parse_file(filepath: str):
@@ -59,25 +62,30 @@ def merge_data():
     merged_dataframe.to_csv("./Datasets/merged.csv")
 
 
-def plot(correct, predicted):
+def plot(correct, predicted, filename):
     mat = confusion_matrix(correct, predicted)
 
     sns.heatmap(mat.T, square=True, annot=True, fmt="d",
                 xticklabels=["True", "False"], yticklabels=["True", "False"])
 
-    plt.xlabel("true labels")
-    plt.ylabel("predicted label")
+    plt.xlabel("True labels")
+    plt.ylabel("Predicted labels")
 
-    plt.show()
+    plt.savefig(filename)
+    plt.clf()
 
 
-def classify(x_train, x_test, y_train, y_test, model):
+def classify(x_train, x_test, y_train, y_test, model, filename):
     model.fit(x_train.to_numpy(), y_train.to_numpy())
     predicted_categories = model.predict(x_test.to_numpy())
 
-    # plot(y_test.to_numpy(), predicted_categories)
+    plot(y_test.to_numpy(), predicted_categories, f"{filename}.png")
 
-    print(classification_report(y_test.to_numpy(), predicted_categories))
+    report = classification_report(
+        y_test.to_numpy(), predicted_categories, output_dict=True)
+
+    df = pd.DataFrame(report).transpose()
+    df.to_csv(f"{filename}.csv")
 
 
 def balanced_classes(df, class_column):
@@ -90,23 +98,30 @@ def balanced_classes(df, class_column):
     return df_balanced
 
 
-def classify_with_tfidf(df):
+def classify_with_tfidf():
     test_dataframe = preprocess_file("./Datasets/test.csv")
     train_dataframe = preprocess_file("./Datasets/train.csv")
     df = pd.concat([train_dataframe, test_dataframe])
 
     df_balanced = balanced_classes(df, "class")
-    model = make_pipeline(TfidfVectorizer(), MultinomialNB())
-    kf = KFold(n_splits=10, shuffle=True)
 
-    for train_indicies, test_indicies in kf.split(df_balanced):
-        x_train = df_balanced.iloc[train_indicies]["tweet"]
-        x_test = df_balanced.iloc[test_indicies]["tweet"]
-        y_train = df_balanced.iloc[train_indicies]["class"]
-        y_test = df_balanced.iloc[test_indicies]["class"]
+    for classifier, name in zip(classifiers, classifiers_names):
+        model = make_pipeline(TfidfVectorizer(), classifier)
+        kf = KFold(n_splits=10, shuffle=True)
+        i = 1
 
-        classify(x_train=x_train, x_test=x_test,
-                 y_train=y_train, y_test=y_test, model=model)
+        for train_indicies, test_indicies in kf.split(df_balanced):
+            x_train = df_balanced.iloc[train_indicies]["tweet"]
+            x_test = df_balanced.iloc[test_indicies]["tweet"]
+            y_train = df_balanced.iloc[train_indicies]["class"]
+            y_test = df_balanced.iloc[test_indicies]["class"]
+
+            filename = f"{name}_tfidf_{i}"
+            i += 1
+            classify(x_train=x_train, x_test=x_test, y_train=y_train,
+                     y_test=y_test, model=model, filename=filename)
+
+        joblib.dump(model, f"{name}_tfidf.sav")
 
 
 def classify_with_custom_features():
@@ -121,22 +136,30 @@ def classify_with_custom_features():
     df = feature_engineering(df, "tweet", freq_inverted)
 
     df_balanced = balanced_classes(df, "class")
-    model = make_pipeline(MultinomialNB())
-    kf = KFold(n_splits=10, shuffle=True)
 
-    for train_indicies, test_indicies in kf.split(df_balanced):
-        x_train = df_balanced.iloc[train_indicies][[
-            'spoken', "rarity", "meanings", "lexical", "emoticon"]]
-        x_test = df_balanced.iloc[test_indicies][[
-            'spoken', "rarity", "meanings", "lexical", "emoticon"]]
-        y_train = df_balanced.iloc[train_indicies]["class"]
-        y_test = df_balanced.iloc[test_indicies]["class"]
+    for classifier, name in zip(classifiers, classifiers_names):
+        model = make_pipeline(classifier)
+        kf = KFold(n_splits=10, shuffle=True)
+        i = 1
 
-        classify(x_train=x_train, x_test=x_test,
-                 y_train=y_train, y_test=y_test, model=model)
+        for train_indicies, test_indicies in kf.split(df_balanced):
+            x_train = df_balanced.iloc[train_indicies][[
+                'spoken', "rarity", "meanings", "lexical", "emoticon"]]
+            x_test = df_balanced.iloc[test_indicies][[
+                'spoken', "rarity", "meanings", "lexical", "emoticon"]]
+            y_train = df_balanced.iloc[train_indicies]["class"]
+            y_test = df_balanced.iloc[test_indicies]["class"]
+
+            filename = f"{name}_cf_{i}"
+            i += 1
+            classify(x_train=x_train, x_test=x_test,
+                     y_train=y_train, y_test=y_test, model=model, filename=filename)
+
+        joblib.dump(model, f"{name}_cf.sav")
 
 
 def main():
+    classify_with_tfidf()
     classify_with_custom_features()
 
 
