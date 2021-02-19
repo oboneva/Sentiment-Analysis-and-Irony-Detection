@@ -18,7 +18,7 @@ from feature_engineering import feature_engineering
 
 sns.set()
 
-classifiers = [MultinomialNB(), SVC(), RandomForestClassifier(),
+classifiers = [MultinomialNB(), SVC(probability=True), RandomForestClassifier(),
                KNeighborsClassifier(n_neighbors=3), DecisionTreeClassifier()]
 classifiers_names = ["naive_bayes", "svm", "random_forest",
                      "knn3", "decision_tree"]
@@ -38,24 +38,17 @@ def preprocess_file(filepath):
     df = parse_file(filepath)
     df = df.rename(columns={"tweets": "tweet"})
     df = clean(df, "tweet")
+    df = df.dropna()
     modify_classes(df)
 
     return df
 
 
 def merge_data():
-    test_dataframe = parse_file("./Datasets/test.csv")
-    test_dataframe = test_dataframe.rename(columns={"tweets": "tweet"})
-    test_dataframe = clean(test_dataframe, "tweet")
-    test_dataframe = test_dataframe.dropna()
-    modify_classes(test_dataframe)
+    test_dataframe = preprocess_file("./Datasets/test.csv")
     test_dataframe.to_csv("./Datasets/test_cleaned.csv")
 
-    train_dataframe = parse_file("./Datasets/train.csv")
-    train_dataframe = train_dataframe.rename(columns={"tweets": "tweet"})
-    train_dataframe = clean(train_dataframe, "tweet")
-    train_dataframe = train_dataframe.dropna()
-    modify_classes(train_dataframe)
+    train_dataframe = preprocess_file("./Datasets/train.csv")
     train_dataframe.to_csv("./Datasets/train_cleaned.csv")
 
     merged_dataframe = pd.concat([train_dataframe, test_dataframe])
@@ -96,6 +89,26 @@ def balanced_classes(df, class_column):
     df_balanced = pd.concat([df_positives, df_negatives])
 
     return df_balanced
+
+
+def classify_tfidf_all(df):
+    for classifier, name in zip(classifiers, classifiers_names):
+        model = make_pipeline(TfidfVectorizer(), classifier)
+        kf = KFold(n_splits=3, shuffle=True)
+        i = 1
+
+        for train_indicies, test_indicies in kf.split(df):
+            x_train = df.iloc[train_indicies]["comment"]
+            x_test = df.iloc[test_indicies]["comment"]
+            y_train = df.iloc[train_indicies]["class"]
+            y_test = df.iloc[test_indicies]["class"]
+
+            filename = f"{name}_tfidf_all_{i}"
+            i += 1
+            classify(x_train=x_train, x_test=x_test, y_train=y_train,
+                     y_test=y_test, model=model, filename=filename)
+
+        joblib.dump(model, f"{name}_tfidf_all.sav")
 
 
 def classify_with_tfidf():
@@ -158,9 +171,104 @@ def classify_with_custom_features():
         joblib.dump(model, f"{name}_cf.sav")
 
 
+def balanced_reviews_tweets(positives, negatives):
+    tweets_df = preprocess_file("./Datasets/test.csv")
+    tweets_df = tweets_df.rename(columns={"tweet": "comment"})
+    reviews_df = pd.read_csv("./labeled_reviews.csv")
+    reviews_df = reviews_df[['comment', 'class']]
+
+    tweets_df_positives = tweets_df[tweets_df["class"] == True]
+    tweets_df_negatives = tweets_df[tweets_df["class"] == False]
+
+    tweets_df_positives = tweets_df_positives[:positives]
+    tweets_df_positives = tweets_df_positives[['comment', 'class']]
+    tweets_df_negatives = tweets_df_negatives[:negatives]
+    tweets_df_negatives = tweets_df_negatives[['comment', 'class']]
+
+    result = pd.concat([tweets_df_positives, tweets_df_negatives, reviews_df])
+
+    return result
+
+
+def train_test_sets(df, k):
+    test = df[: len(df) // k]
+    train = df[len(df) // k:]
+
+    return train, test
+
+
+def train_test_balanced_reviews_tweets(positives, negatives):
+    tweets_df = preprocess_file("./Datasets/test.csv")
+    tweets_df = tweets_df.rename(columns={"tweet": "comment"})
+    reviews_df = pd.read_csv("./labeled_reviews.csv")
+    reviews_df = reviews_df[['comment', 'class']]
+
+    tweets_df_positives = tweets_df[tweets_df["class"] == True]
+    tweets_df_negatives = tweets_df[tweets_df["class"] == False]
+    tweets_df_positives = tweets_df_positives[:positives]
+    tweets_df_positives = tweets_df_positives[['comment', 'class']]
+    tweets_df_negatives = tweets_df_negatives[:negatives]
+    tweets_df_negatives = tweets_df_negatives[['comment', 'class']]
+
+    train_reviews_df, test_reviews_df = train_test_sets(reviews_df, 3)
+    tweets_df_positives_train, tweets_df_positives_test = train_test_sets(
+        tweets_df_positives, 3)
+    tweets_df_negatives_train, tweets_df_negatives_test = train_test_sets(
+        tweets_df_negatives, 3)
+
+    train = pd.concat([tweets_df_positives_train,
+                       tweets_df_negatives_train, train_reviews_df])
+
+    test = pd.concat([tweets_df_positives_test,
+                      tweets_df_negatives_test, test_reviews_df])
+
+    return train, test
+
+
+def semi_sup():
+    df_labeled_train, df_labeled_test = train_test_balanced_reviews_tweets(
+        1000, 1000)
+
+    df_unlabeled = pd.read_csv("unlabeled_reviews.csv")
+    model = joblib.load("./svm_tfidf_all.sav")
+
+    high_prob = [1]
+    while len(high_prob) > 0:
+        model.fit(df_labeled_train["comment"].to_numpy(),
+                  df_labeled_train["class"].to_numpy())
+        predicted_categories = model.predict(
+            df_unlabeled["comment"].to_numpy())
+        predicted_categories_proba = model.predict_proba(
+            df_unlabeled["comment"].to_numpy())
+
+        prob_false = predicted_categories_proba[:, 0]
+        prob_true = predicted_categories_proba[:, 1]
+
+        df_prob = pd.DataFrame([])
+        df_prob['preds'] = predicted_categories
+        df_prob['prob_false'] = prob_false
+        df_prob['prob_true'] = prob_true
+        df_prob.index = df_unlabeled.index
+
+        high_prob = pd.concat([df_prob.loc[df_prob['prob_false'] > 0.99],
+                               df_prob.loc[df_prob['prob_true'] > 0.99]],
+                              axis=0)
+
+        pseudos = df_unlabeled.loc[high_prob.index]
+        pseudos["class"] = high_prob['preds']
+        df_labeled_train = pd.concat(
+            [df_labeled_train, pseudos[['comment', 'class']]], axis=0)
+        df_unlabeled = df_unlabeled.drop(index=high_prob.index)
+
+        test = model.predict(df_labeled_test["comment"].to_numpy())
+        report = classification_report(
+            df_labeled_test["class"].to_numpy(), test)
+
+
 def main():
-    classify_with_tfidf()
-    classify_with_custom_features()
+    # classify_with_tfidf()
+    # classify_with_custom_features()
+    semi_sup()
 
 
 if __name__ == "__main__":
