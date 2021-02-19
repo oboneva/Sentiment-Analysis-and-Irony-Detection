@@ -91,52 +91,6 @@ def balanced_classes(df, class_column):
     return df_balanced
 
 
-def classify_tfidf_all(df):
-    for classifier, name in zip(classifiers, classifiers_names):
-        model = make_pipeline(TfidfVectorizer(), classifier)
-        kf = KFold(n_splits=3, shuffle=True)
-        i = 1
-
-        for train_indicies, test_indicies in kf.split(df):
-            x_train = df.iloc[train_indicies]["comment"]
-            x_test = df.iloc[test_indicies]["comment"]
-            y_train = df.iloc[train_indicies]["class"]
-            y_test = df.iloc[test_indicies]["class"]
-
-            filename = f"{name}_tfidf_all_{i}"
-            i += 1
-            classify(x_train=x_train, x_test=x_test, y_train=y_train,
-                     y_test=y_test, model=model, filename=filename)
-
-        joblib.dump(model, f"{name}_tfidf_all.sav")
-
-
-def classify_with_tfidf():
-    test_dataframe = preprocess_file("./Datasets/test.csv")
-    train_dataframe = preprocess_file("./Datasets/train.csv")
-    df = pd.concat([train_dataframe, test_dataframe])
-
-    df_balanced = balanced_classes(df, "class")
-
-    for classifier, name in zip(classifiers, classifiers_names):
-        model = make_pipeline(TfidfVectorizer(), classifier)
-        kf = KFold(n_splits=10, shuffle=True)
-        i = 1
-
-        for train_indicies, test_indicies in kf.split(df_balanced):
-            x_train = df_balanced.iloc[train_indicies]["tweet"]
-            x_test = df_balanced.iloc[test_indicies]["tweet"]
-            y_train = df_balanced.iloc[train_indicies]["class"]
-            y_test = df_balanced.iloc[test_indicies]["class"]
-
-            filename = f"{name}_tfidf_{i}"
-            i += 1
-            classify(x_train=x_train, x_test=x_test, y_train=y_train,
-                     y_test=y_test, model=model, filename=filename)
-
-        joblib.dump(model, f"{name}_tfidf.sav")
-
-
 def classify_with_custom_features():
     test_dataframe = preprocess_file("./Datasets/test.csv")
     train_dataframe = preprocess_file("./Datasets/train.csv")
@@ -169,25 +123,6 @@ def classify_with_custom_features():
                      y_train=y_train, y_test=y_test, model=model, filename=filename)
 
         joblib.dump(model, f"{name}_cf.sav")
-
-
-def balanced_reviews_tweets(positives, negatives):
-    tweets_df = preprocess_file("./Datasets/test.csv")
-    tweets_df = tweets_df.rename(columns={"tweet": "comment"})
-    reviews_df = pd.read_csv("./labeled_reviews.csv")
-    reviews_df = reviews_df[['comment', 'class']]
-
-    tweets_df_positives = tweets_df[tweets_df["class"] == True]
-    tweets_df_negatives = tweets_df[tweets_df["class"] == False]
-
-    tweets_df_positives = tweets_df_positives[:positives]
-    tweets_df_positives = tweets_df_positives[['comment', 'class']]
-    tweets_df_negatives = tweets_df_negatives[:negatives]
-    tweets_df_negatives = tweets_df_negatives[['comment', 'class']]
-
-    result = pd.concat([tweets_df_positives, tweets_df_negatives, reviews_df])
-
-    return result
 
 
 def train_test_sets(df, k):
@@ -225,50 +160,61 @@ def train_test_balanced_reviews_tweets(positives, negatives):
     return train, test
 
 
-def semi_sup():
-    df_labeled_train, df_labeled_test = train_test_balanced_reviews_tweets(
-        1000, 1000)
+def semi_sup_tfidf():
+    for classifier, name in zip(classifiers, classifiers_names):
+        model = make_pipeline(TfidfVectorizer(), classifier)
 
-    df_unlabeled = pd.read_csv("unlabeled_reviews.csv")
-    model = joblib.load("./svm_tfidf_all.sav")
+        df_labeled_train, df_labeled_test = train_test_balanced_reviews_tweets(
+            1000, 1000)
 
-    high_prob = [1]
-    while len(high_prob) > 0:
-        model.fit(df_labeled_train["comment"].to_numpy(),
-                  df_labeled_train["class"].to_numpy())
-        predicted_categories = model.predict(
-            df_unlabeled["comment"].to_numpy())
-        predicted_categories_proba = model.predict_proba(
-            df_unlabeled["comment"].to_numpy())
+        df_unlabeled = pd.read_csv("unlabeled_reviews.csv")
 
-        prob_false = predicted_categories_proba[:, 0]
-        prob_true = predicted_categories_proba[:, 1]
+        high_prob = [1]
+        i = 0
+        while True:
+            model.fit(df_labeled_train["comment"].to_numpy(),
+                      df_labeled_train["class"].to_numpy())
+            predicted_categories = model.predict(
+                df_unlabeled["comment"].to_numpy())
+            predicted_categories_prob = model.predict_proba(
+                df_unlabeled["comment"].to_numpy())
 
-        df_prob = pd.DataFrame([])
-        df_prob['preds'] = predicted_categories
-        df_prob['prob_false'] = prob_false
-        df_prob['prob_true'] = prob_true
-        df_prob.index = df_unlabeled.index
+            prob_false = predicted_categories_prob[:, 0]
+            prob_true = predicted_categories_prob[:, 1]
 
-        high_prob = pd.concat([df_prob.loc[df_prob['prob_false'] > 0.99],
-                               df_prob.loc[df_prob['prob_true'] > 0.99]],
-                              axis=0)
+            df_prob = pd.DataFrame([])
+            df_prob['predicted'] = predicted_categories
+            df_prob['prob_false'] = prob_false
+            df_prob['prob_true'] = prob_true
+            df_prob.index = df_unlabeled.index
 
-        pseudos = df_unlabeled.loc[high_prob.index]
-        pseudos["class"] = high_prob['preds']
-        df_labeled_train = pd.concat(
-            [df_labeled_train, pseudos[['comment', 'class']]], axis=0)
-        df_unlabeled = df_unlabeled.drop(index=high_prob.index)
+            high_prob = pd.concat([df_prob.loc[df_prob['prob_false'] > 0.99],
+                                   df_prob.loc[df_prob['prob_true'] > 0.99]], axis=0)
 
-        test = model.predict(df_labeled_test["comment"].to_numpy())
-        report = classification_report(
-            df_labeled_test["class"].to_numpy(), test)
+            pseudos = df_unlabeled.loc[high_prob.index]
+            pseudos["class"] = high_prob['predicted']
+            df_labeled_train = pd.concat(
+                [df_labeled_train, pseudos[['comment', 'class']]], axis=0)
+            df_unlabeled = df_unlabeled.drop(index=high_prob.index)
+
+            if len(df_unlabeled) == 0 or len(high_prob) == 0:
+                test = model.predict(df_labeled_test["comment"].to_numpy())
+                report = classification_report(
+                    df_labeled_test["class"].to_numpy(), test, output_dict=True)
+                sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True)
+                plt.yticks(rotation=0)
+                plt.tight_layout()
+                plt.savefig(f"{name}_tfidf.png")
+                plt.clf()
+                joblib.dump(model, f"{name}_tfidf.sav")
+                break
+
+            i += 1
 
 
 def main():
-    # classify_with_tfidf()
     # classify_with_custom_features()
-    semi_sup()
+    semi_sup_tfidf()
 
 
 if __name__ == "__main__":
