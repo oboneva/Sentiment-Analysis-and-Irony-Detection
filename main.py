@@ -6,9 +6,8 @@ from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.model_selection import KFold
 from sklearn.pipeline import make_pipeline
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import classification_report
 import seaborn as sns
 import json
 import joblib
