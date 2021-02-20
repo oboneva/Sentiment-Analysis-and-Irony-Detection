@@ -14,7 +14,10 @@ def score_tweet_rarity(tweet: str, dict):
     tweet = tweet.translate(table_punctuation)
     tweet_tokens = tweet.split()
 
-    return sum([dict[word] for word in tweet_tokens]) / len(tweet_tokens)
+    if len(tweet_tokens) == 0:
+        return 1
+
+    return sum([dict[word] if word in dict else 1 for word in tweet_tokens]) / len(tweet_tokens)
 
 
 def score_tweet_meanings(tweet: str):
@@ -22,6 +25,9 @@ def score_tweet_meanings(tweet: str):
     table_punctuation = str.maketrans(dict.fromkeys(string.punctuation))
     tweet = tweet.translate(table_punctuation)
     tweet_tokens = tweet.split()
+
+    if len(tweet_tokens) == 0:
+        return 1
 
     return sum([len(wn.synsets(word)) for word in tweet_tokens]) / len(tweet_tokens)
 
