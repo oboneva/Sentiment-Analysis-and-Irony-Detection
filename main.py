@@ -39,9 +39,10 @@ def preprocess_file(filepath):
     return df
 
 
-def plot(report, filename):
+def plot(report, filename, label):
     sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True)
     plt.yticks(rotation=0)
+    plt.title(label)
     plt.tight_layout()
     plt.savefig(filename)
     plt.clf()
@@ -150,7 +151,7 @@ def semi_sup_cf():
                     'spoken', "rarity", "meanings", "lexical", "emoticon"]].to_numpy())
                 report = classification_report(
                     df_labeled_test["class"].to_numpy(), test, output_dict=True)
-                plot(report, f"{name}_cf.png")
+                plot(report, f"{name}_cf.png", f"{name} with custom features")
                 joblib.dump(model, f"{name}_cf.sav")
                 break
 
@@ -198,7 +199,7 @@ def semi_sup_tfidf():
                 test = model.predict(df_labeled_test["comment"].to_numpy())
                 report = classification_report(
                     df_labeled_test["class"].to_numpy(), test, output_dict=True)
-                plot(report, f"{name}_tfidf.png")
+                plot(report, f"{name}_tfidf.png", f"{name} with tfidf")
                 joblib.dump(model, f"{name}_tfidf.sav")
                 break
 
@@ -206,7 +207,7 @@ def semi_sup_tfidf():
 
 
 def main():
-    # semi_sup_tfidf()
+    semi_sup_tfidf()
     semi_sup_cf()
 
 
