@@ -17,7 +17,7 @@ def separate_labeled_and_unlabeled_reviews_to_files(filename_semi, filename_lbl,
 
 def main():
     separate_labeled_and_unlabeled_reviews_to_files(
-        "reviews_semi_labeled.csv", "labeled_reviews.csv", "unlabeled_reviews.csv", "asd")
+        "./Datasets/reviews_semi_labeled.csv", "./Datasets/labeled_reviews.csv", "./Datasets/unlabeled_reviews.csv", "asd")
 
 
 if __name__ == "__main__":

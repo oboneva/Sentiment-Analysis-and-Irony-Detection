@@ -84,7 +84,7 @@ def train_test_balanced_reviews_tweets(positives, negatives):
 
 
 def semi_sup_cf():
-    # df_review = pd.read_csv("labeled_reviews.csv")
+    # df_review = pd.read_csv("./Datasets/labeled_reviews.csv")
     # df_tweet = preprocess_file("./Datasets/test.csv")
     # df_tweet = df_tweet.rename(columns={"tweet": "comment"})
     # df_review = df_review[['comment', 'class']]
